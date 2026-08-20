@@ -1,0 +1,29 @@
+# AI Anomaly Detection Agent - Configuration
+# All tunable values live here. No magic numbers in code.
+
+data:
+  # Path to the Excel file. Override via CLI: python main.py --file path/to/file.xlsx
+  file_path: "data/sample_metrics.xlsx"
+  # Name of the column containing the date/timestamp. Set to null to auto-detect.
+  timestamp_column: "Date"
+
+detection:
+  # Trailing window size (in periods) for rolling mean/std baseline
+  window_size: 30
+  # Z-score threshold; points beyond ±threshold are flagged as anomalies
+  z_threshold: 3.0
+
+smtp:
+  server: "smtp.gmail.com"
+  port: 587
+  use_tls: true
+  # Credentials are read from environment variables (.env), never hardcoded here.
+  username_env: "SMTP_USERNAME"
+  password_env: "SMTP_PASSWORD"
+  sender_env: "ALERT_SENDER"
+  # Comma-separated list of recipient email addresses
+  recipients_env: "ALERT_RECIPIENTS"
+
+logging:
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
