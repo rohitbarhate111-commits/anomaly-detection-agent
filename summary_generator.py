@@ -7,6 +7,12 @@ Caveat: we don't have a real business glossary, so the "Possible Impact" section
 is inferred from the column name using generic heuristics (e.g. "revenue" ->
 financial impact, "error" -> reliability impact). This is intentionally generic
 and should be replaced with a proper glossary mapping for production use.
+
+v2 additions:
+    - Each summary dict includes placeholder fields `co_occurrences` and
+      `correlation_note`. They are filled in by correlation.attach_correlation_notes.
+    - Each summary dict includes `is_escalation` (default False) so the email
+      body and report can flag escalations without re-deriving the rule.
 """
 
 import logging
@@ -40,7 +46,6 @@ def _infer_impact(metric_name: str) -> str:
 
 
 def _severity_label(z_score: float) -> str:
-    """Translate raw z-score into plain language."""
     a = abs(z_score)
     if a >= 6:
         return "extreme outlier"
@@ -51,17 +56,17 @@ def _severity_label(z_score: float) -> str:
     return "slightly outside the typical range"
 
 
-def generate_summary(anomaly: Anomaly) -> dict:
+def generate_summary(anomaly: Anomaly, is_escalation: bool = False) -> dict:
     """
     Build a structured summary block for one anomaly.
 
     Returns:
-        dict with keys: metric, timestamp, direction, severity, what_changed,
-        significance, possible_impact, pct_change.
+        dict with keys: metric, timestamp, direction, severity, z_score,
+        actual, rolling_mean, what_changed, significance, possible_impact,
+        co_occurrences, correlation_note, is_escalation.
     """
     direction_word = "spiked" if anomaly.direction == "up" else "dropped"
 
-    # Percent change vs the rolling mean (the "expected" baseline).
     if anomaly.rolling_mean and not _is_zero(anomaly.rolling_mean):
         pct_change = ((anomaly.actual - anomaly.rolling_mean) / anomaly.rolling_mean) * 100.0
         pct_str = f"{pct_change:+.1f}% vs baseline"
@@ -74,14 +79,14 @@ def generate_summary(anomaly: Anomaly) -> dict:
         f"on {anomaly.timestamp.strftime('%Y-%m-%d')}."
     )
 
+    mode_tag = f" [{anomaly.detection_mode_used}]" if anomaly.detection_mode_used != "zscore" else ""
     significance = (
-        f"Z-score of {anomaly.z_score:+.2f} - this is "
+        f"Z-score of {anomaly.z_score:+.2f}{mode_tag} - this is "
         f"{_severity_label(anomaly.z_score)} "
         f"(threshold: ±3.0 std deviations)."
     )
 
     impact = _infer_impact(anomaly.metric)
-
     possible_impact = (
         f"Given the column name '{anomaly.metric}', this likely affects "
         f"{impact}. Confirm against your internal business glossary before "
@@ -99,6 +104,10 @@ def generate_summary(anomaly: Anomaly) -> dict:
         "what_changed": what_changed,
         "significance": significance,
         "possible_impact": possible_impact,
+        # v2 fields (filled in by correlation.attach_correlation_notes)
+        "co_occurrences": [],
+        "correlation_note": "",
+        "is_escalation": is_escalation,
     }
 
 

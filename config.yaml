@@ -1,18 +1,50 @@
 # AI Anomaly Detection Agent - Configuration
 # All tunable values live here. No magic numbers in code.
 
+# ---- Input selection ----
+# One of: excel_file | excel_folder | database
+input_mode: excel_file
+
 data:
-  # Path to the Excel file. Override via CLI: python main.py --file path/to/file.xlsx
+  # Used when input_mode = excel_file
   file_path: "data/sample_metrics.xlsx"
-  # Name of the column containing the date/timestamp. Set to null to auto-detect.
+  # Used when input_mode = excel_folder
+  folder_path: "data/folder_in"
+  # Name of the date/timestamp column (auto-detected if null)
   timestamp_column: "Date"
 
-detection:
-  # Trailing window size (in periods) for rolling mean/std baseline
-  window_size: 30
-  # Z-score threshold; points beyond ±threshold are flagged as anomalies
-  z_threshold: 3.0
+# Used when input_mode = database. The connection_string and query may be
+# given directly, OR prefixed with "ENV:" to read from an environment variable.
+# Example:
+#   connection_string: "ENV:DB_CONNECTION_STRING"
+#   query: "ENV:DB_QUERY"
+db:
+  connection_string: ""
+  query: ""
 
+# ---- Detection ----
+detection:
+  mode: "seasonal"           # "zscore" (v1) or "seasonal" (v2 STL)
+  window_size: 30
+  z_threshold: 3.0
+  seasonal_period: 7          # weekly for daily data
+  min_cycles: 2               # need >= 2 cycles for seasonal; else fall back
+
+# ---- Suppression (v2) ----
+suppression:
+  enabled: true
+  state_db_path: "anomaly_state.db"
+  escalation_z_delta: 2.0     # if |z| jumps by this much while still active -> escalate
+
+# ---- Correlation / root-cause hints (v2) ----
+# 0 = same calendar day only; N>0 expands window to ±N days.
+correlation_window_days: 0
+
+# ---- Reporting (v2) ----
+report:
+  output_dir: "./reports"
+
+# ---- Email ----
 smtp:
   server: "smtp.gmail.com"
   port: 587
@@ -21,7 +53,6 @@ smtp:
   username_env: "SMTP_USERNAME"
   password_env: "SMTP_PASSWORD"
   sender_env: "ALERT_SENDER"
-  # Comma-separated list of recipient email addresses
   recipients_env: "ALERT_RECIPIENTS"
 
 logging:
