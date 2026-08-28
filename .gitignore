@@ -2,7 +2,12 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-data/*.xlsx
-!data/.gitkeep
 .venv/
 venv/
+
+# Generated local data and reports
+data/*.xlsx
+!data/.gitkeep
+reports/
+anomaly_state.db
+*.db

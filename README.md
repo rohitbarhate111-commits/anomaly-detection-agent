@@ -1,67 +1,103 @@
 # AI Anomaly Detection Agent
 
-A small, modular Python agent that scans time-series metrics from Excel files,
-Excel folders, or a Postgres database, flags points that fall outside a
-rolling baseline (z-score or seasonal STL), and:
+A modular Python pipeline for detecting unusual time-series metric behaviour and turning it into actionable, non-causal operational signals.
 
-- emails a single summary alert per run (with suppression + escalation),
-- writes a self-contained HTML report with charts,
-- groups co-occurring anomalies for root-cause hints (no causal claims).
+It supports:
 
-## Layout
+- Excel files, Excel folders, and SQLAlchemy-compatible databases as inputs
+- rolling z-score detection and seasonal STL detection
+- per-metric alert suppression with escalation handling
+- co-occurrence hints without claiming causation
+- one summary email per run
+- self-contained HTML reports with inline charts
 
+## Architecture
+
+```text
+Input source
+    │
+    ▼
+ data_loader ──────► normalized DataFrame
+    │
+    ▼
+anomaly_detector ──► Anomaly records
+    │
+    ├──► summary_generator ──► business-context summaries
+    ├──► correlation ────────► co-occurrence notes
+    │
+    ▼
+ state_store ──────► suppression / escalation decisions
+    │
+    ├──► email_alerter ──────► single alert email
+    └──► report_generator ───► portable HTML report
 ```
+
+The modules communicate through small data structures rather than sharing transport, storage, or presentation concerns.
+
+## Project layout
+
+```text
 anomaly-detection-agent/
-├── main.py                  # Orchestrator / CLI entry point
-├── data_loader.py           # excel_file / excel_folder / database -> DataFrame
-├── db_loader.py             # Postgres (SQLAlchemy) loader (optional)
-├── anomaly_detector.py      # zscore or seasonal STL detection
-├── summary_generator.py     # Plain-language anomaly summaries
-├── correlation.py           # Same-timestamp grouping (non-causal)
-├── state_store.py           # SQLite suppression state (per metric)
-├── email_alerter.py         # Single email per run; escalation tagging
-├── report_generator.py      # Self-contained HTML report w/ charts
-├── generate_sample.py       # Synthetic .xlsx for the four test scenarios
-├── config.yaml              # All tunables
+├── main.py
+├── data_loader.py
+├── db_loader.py
+├── anomaly_detector.py
+├── summary_generator.py
+├── correlation.py
+├── state_store.py
+├── email_alerter.py
+├── report_generator.py
+├── generate_sample.py
+├── tests/
+│   └── test_detection_and_correlation.py
+├── config.yaml
 ├── requirements.txt
-├── .env.example             # SMTP + (optional) DB credentials
-└── data/
+├── .env.example
+└── .gitignore
 ```
 
-## Setup
+## Requirements and setup
+
+Python 3.9+ is recommended.
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-cp .env.example .env               # then edit .env
 ```
 
-## Quick start (v1 flow still works)
+SMTP credentials are optional for local detection/report testing. If email delivery is enabled, copy `.env.example` to `.env` and provide the required environment variables. `.env` is ignored by Git.
+
+## Quick start
+
+Generate deterministic sample data and run the default seasonal detector:
 
 ```bash
-python generate_sample.py                      # simple scenario
-python main.py                                 # zscore mode, no suppression
+python generate_sample.py --mode seasonal --out data/seasonal.xlsx
+python main.py --file data/seasonal.xlsx
 ```
 
-## v2 scenarios
+The run writes a self-contained HTML report under `reports/`. Email delivery is attempted only when the configured SMTP environment variables are available.
+
+### Sample scenarios
 
 ```bash
-python generate_sample.py --mode seasonal   --out data/seasonal.xlsx
-python generate_sample.py --mode ongoing    --out data/ongoing.xlsx
+python generate_sample.py --mode simple
+python generate_sample.py --mode seasonal --out data/seasonal.xlsx
+python generate_sample.py --mode ongoing --out data/ongoing.xlsx
 python generate_sample.py --mode correlated --out data/correlated.xlsx
 ```
 
-Override config defaults per-run via CLI:
+- `simple`: basic upward/downward anomalies
+- `seasonal`: weekly seasonality for STL detection
+- `ongoing`: persistent anomaly for suppression behaviour
+- `correlated`: same-day anomalies for co-occurrence hints
 
-```bash
-python main.py --file data/seasonal.xlsx      # v1 path, seasonal detection on
-python main.py --folder data/folder_in        # excel_folder input mode
-```
+## Configuration
 
-To use the database input mode, set `input_mode: database` in `config.yaml`
-and provide a connection string + query under the `db:` section. You can also
-reference env vars:
+`config.yaml` contains runtime settings for input, detection, suppression, correlation, reporting, SMTP, and logging.
+
+Database credentials and queries can be referenced through environment variables:
 
 ```yaml
 db:
@@ -69,45 +105,38 @@ db:
   query: "ENV:DB_QUERY"
 ```
 
-## Configuration (config.yaml)
+The database loader accepts SQLAlchemy-compatible URLs, so local SQLite can also be used for testing.
 
-| Key                                 | Default                  | Meaning                                                  |
-|-------------------------------------|--------------------------|----------------------------------------------------------|
-| `input_mode`                        | `excel_file`             | `excel_file` / `excel_folder` / `database`               |
-| `data.file_path` / `data.folder_path` | per mode              | Source of the data                                       |
-| `detection.mode`                    | `seasonal`               | `zscore` (v1) or `seasonal` (v2 STL)                     |
-| `detection.window_size`             | `30`                     | Trailing window for rolling baseline                     |
-| `detection.z_threshold`             | `3.0`                    | Anomaly if `|z| > threshold`                             |
-| `detection.seasonal_period`         | `7`                      | Period for STL decomposition                             |
-| `detection.min_cycles`              | `2`                      | Need `>= period * min_cycles` of history for seasonal    |
-| `suppression.enabled`               | `true`                   | Suppress repeat alerts while a metric stays anomalous    |
-| `suppression.escalation_z_delta`    | `2.0`                    | `|z|` jump vs last alert that triggers an escalation      |
-| `suppression.state_db_path`         | `anomaly_state.db`       | SQLite file for per-metric state                         |
-| `correlation_window_days`           | `0`                      | `0` = same day only; `N>0` = ±N days                     |
-| `report.output_dir`                 | `./reports`              | Where HTML reports are written                           |
-| `smtp.*`                            | Gmail defaults           | SMTP transport; credentials from env vars                |
+Important detection settings:
 
-## Behaviour notes
+| Setting | Default | Purpose |
+|---|---:|---|
+| `detection.mode` | `seasonal` | `zscore` or `seasonal` |
+| `detection.window_size` | `30` | Rolling baseline length |
+| `detection.z_threshold` | `3.0` | Absolute z-score threshold |
+| `detection.seasonal_period` | `7` | Seasonal period for STL |
+| `detection.min_cycles` | `2` | Minimum history before seasonal detection |
+| `suppression.enabled` | `true` | Suppress repeated active anomalies |
+| `suppression.escalation_z_delta` | `2.0` | Extra z-score magnitude required for escalation |
+| `correlation_window_days` | `0` | Same date when zero; pairwise ±N-day window otherwise |
+| `report.output_dir` | `./reports` | HTML report destination |
 
-- The first `window_size` rows per metric are skipped (insufficient baseline).
-- Both upward and downward anomalies are tracked; `direction` is explicit.
-- **One email per run**, summarising all kept anomalies; escalations listed first.
-- Email send failures are logged but do not crash the detection run.
-- Suppression is per metric, stored in SQLite; deleting `anomaly_state.db`
-  resets everything.
-- Co-occurrence hints are correlation only — the wording always says
-  "may indicate a related cause, or may be coincidental — not confirmed causation."
-- The HTML report is self-contained: charts are inlined as base64 PNG, no
-  external requests when viewed.
+When seasonal mode does not have enough history, the detector falls back to rolling z-score detection for that metric.
 
-## Testing without real SMTP / DB
+## Testing
+
+Run the regression suite with the Python standard library test runner:
 
 ```bash
-python main.py --file data/sample_metrics.xlsx    # logs summaries, no email
+python -m unittest discover -s tests -v
 ```
 
-For email plumbing, point `smtp.server` / `smtp.port` at a local debug SMTP
-server (e.g. `python -m aiosmtpd -n`) or a service like Mailtrap.
+The tests cover detector configuration validation, non-default DataFrame indexes, and the pairwise correlation-window behaviour.
 
-For database mode, point `db.connection_string` at any SQLAlchemy-compatible
-URL (SQLite works too: `sqlite:///./test.db`).
+## Design notes
+
+- The detector does not make causal claims. Correlation output only identifies temporal co-occurrence.
+- Suppression state is persisted in SQLite so repeated scheduled runs can share alert state.
+- Email failures do not discard the generated detection/report results.
+- Reports inline their chart images and escape user/data-derived HTML content before rendering.
+- Generated Excel files, reports, and local SQLite state are intentionally excluded from version control.
