@@ -22,14 +22,13 @@ import io
 import logging
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import pandas as pd
 
 logger = logging.getLogger(__name__)
 
 
-# Minimum CSS reset + layout, inlined so the file works offline.
 _HTML_TEMPLATE = """<!doctype html>
 <html lang="en">
 <head>
@@ -122,7 +121,7 @@ def generate_report(
     df: pd.DataFrame,
     timestamp_column: str,
     summaries: List[dict],
-    anomalies: list,                       # List[Anomaly]
+    anomalies: List,
     output_dir: str = "./reports",
     detection_mode: str = "zscore",
 ) -> Optional[Path]:
@@ -165,8 +164,6 @@ def generate_report(
         return None
 
 
-# ---------- section renderers ----------
-
 def _render_summary_table(summaries: List[dict]) -> str:
     rows = []
     for s in summaries:
@@ -202,11 +199,13 @@ def _render_summaries(summaries: List[dict]) -> str:
             f'<p class="corr">{s["correlation_note"]}</p>'
             if s.get("correlation_note") else ""
         )
+        direction_class = "up" if s["direction"] == "up" else "down"
+        direction_arrow = "▲" if s["direction"] == "up" else "▼"
         blocks.append(
             f'<div class="summary">'
             f'<h3>{esc}{s["metric"]} - {s["timestamp"]} '
-            f'<span class="{"up" if s["direction"]=="up" else "down"}">'
-            f'({"▲" if s["direction"]=="up" else "▼"} {s["direction"].upper()})</span></h3>'
+            f'<span class="{direction_class}">'
+            f'({direction_arrow} {s["direction"].upper()})</span></h3>'
             f'<p><strong>What changed:</strong> {s["what_changed"]}</p>'
             f'<p><strong>Significance:</strong> {s["significance"]}</p>'
             f'<p><strong>Possible impact:</strong> {s["possible_impact"]}</p>'
@@ -219,11 +218,10 @@ def _render_summaries(summaries: List[dict]) -> str:
 def _render_charts(
     df: pd.DataFrame,
     timestamp_column: str,
-    anomalies: list,
+    anomalies: List,
 ) -> str:
     """One inline base64 PNG chart per metric that had anomalies."""
-    # Group anomalies by metric.
-    by_metric: dict[str, list] = {}
+    by_metric: Dict[str, List] = {}
     for a in anomalies:
         by_metric.setdefault(a.metric, []).append(a)
 
@@ -247,18 +245,17 @@ def _chart_png_base64(
     df: pd.DataFrame,
     timestamp_column: str,
     metric: str,
-    anomalies: list,
+    anomalies: List,
 ) -> str:
     """Render a single line chart to an in-memory PNG and return base64 string."""
     import matplotlib
-    matplotlib.use("Agg")  # no display
+    matplotlib.use("Agg")
     import matplotlib.pyplot as plt
 
     series = df[[timestamp_column, metric]].dropna()
     if series.empty:
         raise ValueError(f"No data for metric '{metric}'.")
 
-    # Build a set of anomaly timestamps for marker overlay.
     anomaly_ts = {pd.Timestamp(a.timestamp) for a in anomalies}
 
     fig, ax = plt.subplots(figsize=(10, 3.5), dpi=100)
