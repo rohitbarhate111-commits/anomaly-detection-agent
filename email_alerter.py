@@ -16,7 +16,7 @@ import os
 import smtplib
 from datetime import datetime
 from email.message import EmailMessage
-from typing import List
+from typing import List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,7 @@ def resolve_email_config(smtp_cfg: dict) -> EmailConfig:
     )
 
 
-def build_email_body(summaries: List[dict]) -> tuple[str, str]:
+def build_email_body(summaries: List[dict]) -> Tuple[str, str]:
     """
     Build (subject, body) for the alert email.
 
@@ -98,17 +98,17 @@ def build_email_body(summaries: List[dict]) -> tuple[str, str]:
         "",
     ]
 
-    # Escalations first so they are visible even in a long list.
     escalations = [s for s in summaries if s.get("is_escalation")]
     regulars    = [s for s in summaries if not s.get("is_escalation")]
 
     def _render_block(idx: int, s: dict) -> List[str]:
-        header = (
-            f"#{idx}. [ESCALATION] {s['metric']}  ({s['timestamp']})  -  "
-            f"{s['direction'].upper()}"
-        ) if s.get("is_escalation") else (
-            f"#{idx}. {s['metric']}  ({s['timestamp']})  -  {s['direction'].upper()}"
-        )
+        if s.get("is_escalation"):
+            header = (
+                f"#{idx}. [ESCALATION] {s['metric']}  ({s['timestamp']})  -  "
+                f"{s['direction'].upper()}"
+            )
+        else:
+            header = f"#{idx}. {s['metric']}  ({s['timestamp']})  -  {s['direction'].upper()}"
         block = [
             header,
             f"    Severity : {s['severity']}  (z = {s['z_score']:+.2f})",
