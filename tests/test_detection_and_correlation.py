@@ -15,14 +15,7 @@ class DetectionTests(unittest.TestCase):
             },
             index=list(range(10, 18)),
         )
-
-        anomalies = detect_anomalies(
-            frame,
-            timestamp_column="Date",
-            window_size=5,
-            z_threshold=1.9,
-        )
-
+        anomalies = detect_anomalies(frame, "Date", window_size=5, z_threshold=1.9)
         self.assertEqual(len(anomalies), 1)
         self.assertEqual(anomalies[0].metric, "metric")
         self.assertEqual(anomalies[0].direction, "up")
@@ -31,7 +24,6 @@ class DetectionTests(unittest.TestCase):
         frame = pd.DataFrame(
             {"Date": pd.date_range("2026-01-01", periods=3), "metric": [1, 2, 3]}
         )
-
         with self.assertRaises(ValueError):
             detect_anomalies(frame, "Date", window_size=1)
         with self.assertRaises(ValueError):
@@ -41,15 +33,13 @@ class DetectionTests(unittest.TestCase):
 
 
 class CorrelationTests(unittest.TestCase):
-    def test_window_is_pairwise_not_bucket_based(self):
+    def test_positive_window_matches_across_neighbouring_dates(self):
         anomalies = [
             Anomaly("a", pd.Timestamp("2026-01-02 00:00"), 1, 0, 1, 4, "up"),
-            Anomaly("b", pd.Timestamp("2026-01-03 23:00"), 1, 0, 1, 4, "up"),
-            Anomaly("c", pd.Timestamp("2026-01-05 00:00"), 1, 0, 1, 4, "up"),
+            Anomaly("b", pd.Timestamp("2026-01-02 23:00"), 1, 0, 1, 4, "up"),
+            Anomaly("c", pd.Timestamp("2026-01-03 23:00"), 1, 0, 1, 4, "up"),
         ]
-
         result = find_co_occurrences(anomalies, window_days=1)
-
         self.assertEqual(result["a"], ["b"])
         self.assertEqual(result["b"], ["a", "c"])
         self.assertEqual(result["c"], ["b"])
