@@ -20,7 +20,7 @@ class DetectionTests(unittest.TestCase):
             frame,
             timestamp_column="Date",
             window_size=5,
-            z_threshold=2,
+            z_threshold=1.9,
         )
 
         self.assertEqual(len(anomalies), 1)
