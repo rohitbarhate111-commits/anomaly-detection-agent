@@ -11,12 +11,11 @@ on the same day. The user-facing language must reflect that uncertainty.
 import logging
 from collections import defaultdict
 from datetime import timedelta
-from typing import List
+from typing import Dict, List
 
 logger = logging.getLogger(__name__)
 
 
-# Exact wording from the spec — must not be paraphrased into something stronger.
 CO_OCCURRENCE_NOTE = (
     "Note: this anomaly coincided with unusual movement in {others} on the "
     "same date. This may indicate a related cause, or may be coincidental "
@@ -25,9 +24,9 @@ CO_OCCURRENCE_NOTE = (
 
 
 def find_co_occurrences(
-    anomalies: list,            # List[Anomaly]
-    window_days: int = 0,       # 0 = same day only
-) -> dict[str, list[str]]:
+    anomalies: List,
+    window_days: int = 0,
+) -> Dict[str, List[str]]:
     """
     Return a dict: metric_name -> ordered list of OTHER metric names that
     also had anomalies within the same time window.
@@ -45,8 +44,7 @@ def find_co_occurrences(
     if not anomalies:
         return {}
 
-    # Group by date.
-    by_date: dict[object, list] = defaultdict(list)
+    by_date: Dict[object, List] = defaultdict(list)
     for a in anomalies:
         ts = a.timestamp
         if hasattr(ts, "date"):
@@ -55,7 +53,7 @@ def find_co_occurrences(
             key = ts
         by_date[key].append(a)
 
-    out: dict[str, list[str]] = {}
+    out: Dict[str, List[str]] = {}
     for cluster in by_date.values():
         if len(cluster) < 2:
             continue
@@ -74,9 +72,9 @@ def find_co_occurrences(
 
 
 def attach_correlation_notes(
-    summaries: list,                  # List[dict] from summary_generator
-    co_occurrences: dict[str, list[str]],
-) -> list:
+    summaries: List,
+    co_occurrences: Dict[str, List[str]],
+) -> List:
     """
     Mutates each summary dict in place to add:
       - 'co_occurrences': List[str] of other metric names (always set, may be empty)
@@ -98,5 +96,4 @@ def attach_correlation_notes(
 def _window_key(ts, window_days: int):
     """Bucket a timestamp into a window key of width 2*window_days+1 days."""
     base = ts.date() if hasattr(ts, "date") else ts
-    # Anchor on the start of the window for stable bucketing.
     return base - timedelta(days=window_days)
