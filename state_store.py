@@ -20,7 +20,7 @@ import logging
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Dict, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +89,9 @@ class StateStore:
             last_value=row[4],
         )
 
-    def get_all(self) -> dict[str, MetricState]:
+    def get_all(self) -> Dict[str, MetricState]:
         """Bulk read for logging at run start."""
-        out: dict[str, MetricState] = {}
+        out: Dict[str, MetricState] = {}
         with self._connect() as conn:
             rows = conn.execute(
                 "SELECT metric, state, last_alert_z, last_alert_at, last_value "
