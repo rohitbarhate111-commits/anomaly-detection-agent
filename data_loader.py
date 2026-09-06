@@ -1,20 +1,19 @@
 """
 data_loader.py
 
-Responsible for reading input data and turning it into a clean pandas
-DataFrame ready for anomaly detection.
+Data ingestion pipeline supporting:
+  1. Single Excel workbook (.xlsx)
+  2. Directory of Excel files (concatenated and aligned)
+  3. Relational databases via SQLAlchemy (delegated to db_loader)
 
-v1: load_excel(path) — single file.
-v2: load_excel_folder(path) — concatenate all .xlsx in a directory, tagging
-    each row with its source filename.
-v2: load_data(config) — dispatcher that picks the right loader based on
-    config.input_mode. Returns (df, timestamp_column).
-
-All loaders normalize into the same wide shape:
-    one timestamp column + N numeric metric columns.
+Normalizes inputs into a consistent wide DataFrame:
+  [timestamp_column, metric_1, metric_2, ...]
 """
 
+from __future__ import annotations
+
 import logging
+import os
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -24,190 +23,177 @@ logger = logging.getLogger(__name__)
 
 
 class DataLoadError(Exception):
-    """Raised when the input data cannot be loaded or is invalid."""
+    """Raised when data source loading or schema validation fails."""
 
 
-# ---------- v1 (unchanged) ----------
+def resolve_path(path_str: str, base_dir: Optional[Path] = None) -> Path:
+    """Resolves relative paths against base_dir or project root."""
+    p = Path(path_str)
+    if p.is_absolute():
+        return p
+    if base_dir:
+        return (base_dir / p).resolve()
+    return (Path(__file__).parent / p).resolve()
+
 
 def load_excel(
-    file_path: str,
+    file_path: str | Path,
     timestamp_column: Optional[str] = None,
+    base_dir: Optional[Path] = None,
 ) -> pd.DataFrame:
-    """Load a single wide-format .xlsx file into a DataFrame."""
-    path = Path(file_path)
+    """Load and normalize a single Excel workbook."""
+    path = resolve_path(str(file_path), base_dir=base_dir)
 
     if not path.is_file():
-        raise DataLoadError(f"Excel file not found at: {path.resolve()}")
+        raise DataLoadError(f"Excel file not found: {path}")
 
-    logger.info(f"Loading Excel file: {path.resolve()}")
-
+    logger.info(f"Loading Excel file: {path}")
     try:
         df = pd.read_excel(path)
     except Exception as exc:
-        raise DataLoadError(f"Failed to read Excel file '{path}': {exc}") from exc
+        raise DataLoadError(f"Failed reading Excel file '{path}': {exc}") from exc
 
     if df.empty:
-        raise DataLoadError(f"Excel file '{path}' contains no rows.")
+        raise DataLoadError(f"Excel file '{path}' is empty.")
 
-    timestamp_col = _resolve_timestamp_column(df, timestamp_column)
-    logger.info(f"Using '{timestamp_col}' as the timestamp column.")
+    ts_col = _resolve_timestamp_column(df, timestamp_column)
+    logger.info(f"Timestamp column resolved as: '{ts_col}'")
 
-    df[timestamp_col] = pd.to_datetime(df[timestamp_col], errors="coerce")
-    if df[timestamp_col].isna().all():
-        raise DataLoadError(
-            f"Column '{timestamp_col}' could not be parsed as dates."
-        )
-    bad_ts = df[timestamp_col].isna().sum()
-    if bad_ts:
-        logger.warning(f"Dropped {bad_ts} rows with unparseable timestamps.")
-        df = df.dropna(subset=[timestamp_col]).reset_index(drop=True)
+    df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
+    bad_ts_count = df[ts_col].isna().sum()
+    if bad_ts_count > 0:
+        logger.warning(f"Dropping {bad_ts_count} row(s) with invalid timestamps.")
+        df = df.dropna(subset=[ts_col])
+
+    if df.empty:
+        raise DataLoadError("All rows contained unparseable timestamps.")
+
+    df = df.sort_values(ts_col).reset_index(drop=True)
 
     numeric_cols = [
         c for c in df.columns
-        if c != timestamp_col and pd.api.types.is_numeric_dtype(df[c])
+        if c != ts_col and pd.api.types.is_numeric_dtype(df[c])
     ]
+
     if not numeric_cols:
-        raise DataLoadError(
-            "No numeric metric columns found. Expected one date column + numeric metrics."
-        )
+        raise DataLoadError(f"No numeric metric columns detected in '{path.name}'.")
 
-    for c in numeric_cols:
-        df[c] = pd.to_numeric(df[c], errors="coerce")
+    for col in numeric_cols:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
 
-    df = df.sort_values(timestamp_col).reset_index(drop=True)
-    logger.info(f"Loaded {len(df)} rows, {len(numeric_cols)} metric columns.")
+    logger.info(f"Successfully loaded {len(df)} rows and {len(numeric_cols)} metric columns.")
     return df
 
 
-# ---------- v2: folder ----------
-
 def load_excel_folder(
-    folder_path: str,
+    folder_path: str | Path,
     timestamp_column: Optional[str] = None,
+    base_dir: Optional[Path] = None,
 ) -> pd.DataFrame:
-    """
-    Read every .xlsx in `folder_path`, concatenate them, tag each row with its
-    source filename in a new '__source_file' column. Returns the same wide
-    format as load_excel; the source column is preserved but non-numeric, so
-    it is ignored by anomaly_detector.
-
-    All files MUST share the same timestamp column name and metric columns.
-    """
-    folder = Path(folder_path)
+    """Load and concatenate all .xlsx workbooks in a directory."""
+    folder = resolve_path(str(folder_path), base_dir=base_dir)
     if not folder.is_dir():
-        raise DataLoadError(f"Excel folder not found: {folder.resolve()}")
+        raise DataLoadError(f"Folder not found: {folder}")
 
     files = sorted(folder.glob("*.xlsx"))
     if not files:
-        raise DataLoadError(f"No .xlsx files found in {folder.resolve()}")
+        raise DataLoadError(f"No .xlsx files found in: {folder}")
 
-    logger.info(f"Loading {len(files)} .xlsx file(s) from {folder.resolve()}")
-
+    logger.info(f"Aggregating {len(files)} workbook(s) from {folder}")
     frames = []
+
     for fp in files:
         try:
-            sub = load_excel(str(fp), timestamp_column=timestamp_column)
+            sub = load_excel(fp, timestamp_column=timestamp_column, base_dir=folder)
             sub["__source_file"] = fp.name
             frames.append(sub)
         except DataLoadError as exc:
-            logger.warning(f"Skipping {fp.name}: {exc}")
+            logger.warning(f"Skipping '{fp.name}': {exc}")
 
     if not frames:
-        raise DataLoadError(
-            f"None of the .xlsx files in {folder} could be loaded."
-        )
+        raise DataLoadError(f"None of the workbooks in '{folder}' could be parsed.")
 
-    # Ensure all frames share the same columns; align on the union, filling gaps with NaN.
     all_cols = sorted({c for f in frames for c in f.columns})
     aligned = [f.reindex(columns=all_cols) for f in frames]
-    df = pd.concat(aligned, ignore_index=True)
+    merged = pd.concat(aligned, ignore_index=True)
 
-    # Resolve timestamp column (union may have included it from any frame).
-    ts_col = _resolve_timestamp_column(df, timestamp_column)
-    df[ts_col] = pd.to_datetime(df[ts_col], errors="coerce")
-    df = df.dropna(subset=[ts_col]).sort_values(ts_col).reset_index(drop=True)
+    ts_col = _resolve_timestamp_column(merged, timestamp_column)
+    merged[ts_col] = pd.to_datetime(merged[ts_col], errors="coerce")
+    merged = merged.dropna(subset=[ts_col]).sort_values(ts_col).reset_index(drop=True)
 
     metric_cols = [
-        c for c in df.columns
-        if c != ts_col and c != "__source_file"
-        and pd.api.types.is_numeric_dtype(df[c])
+        c for c in merged.columns
+        if c != ts_col and c != "__source_file" and pd.api.types.is_numeric_dtype(merged[c])
     ]
+
     if not metric_cols:
-        raise DataLoadError("No numeric metric columns found across the loaded files.")
+        raise DataLoadError("No numeric metric columns found across loaded files.")
 
-    logger.info(
-        f"Concatenated {len(df)} rows from {len(frames)} file(s); "
-        f"{len(metric_cols)} metric column(s)."
-    )
-    return df
+    logger.info(f"Aggregated {len(merged)} total rows across {len(frames)} file(s).")
+    return merged
 
 
-# ---------- v2: dispatcher ----------
-
-def load_data(config: dict) -> Tuple[pd.DataFrame, str]:
+def load_data(config: dict, base_dir: Optional[Path] = None) -> Tuple[pd.DataFrame, str]:
     """
-    Dispatcher driven by config['input_mode']:
-        - 'excel_file'  : config['data']['file_path']
-        - 'excel_folder': config['data']['folder_path']
-        - 'database'    : config['db']['connection_string'] + ['db']['query']
-
-    Returns (df, timestamp_column).
+    Dispatcher loading data based on config['input_mode'].
+    Returns (DataFrame, timestamp_column_name).
     """
-    from db_loader import DatabaseLoadError, load_from_database  # local to avoid hard dep
-
     mode = config.get("input_mode", "excel_file")
-    ts_col = config.get("data", {}).get("timestamp_column")
+    data_cfg = config.get("data", {})
+    ts_col_pref = data_cfg.get("timestamp_column")
 
     if mode == "excel_file":
-        file_path = config["data"]["file_path"]
-        df = load_excel(file_path, timestamp_column=ts_col)
-        return df, _resolve_timestamp_column(df, ts_col)
+        file_path = data_cfg.get("file_path", "data/sample_metrics.xlsx")
+        df = load_excel(file_path, timestamp_column=ts_col_pref, base_dir=base_dir)
+        ts_col = _resolve_timestamp_column(df, ts_col_pref)
+        return df, ts_col
 
     if mode == "excel_folder":
-        folder_path = config["data"].get("folder_path")
-        if not folder_path:
-            raise DataLoadError(
-                "input_mode='excel_folder' requires data.folder_path in config."
-            )
-        df = load_excel_folder(folder_path, timestamp_column=ts_col)
-        return df, _resolve_timestamp_column(df, ts_col)
+        folder_path = data_cfg.get("folder_path", "data/folder_in")
+        df = load_excel_folder(folder_path, timestamp_column=ts_col_pref, base_dir=base_dir)
+        ts_col = _resolve_timestamp_column(df, ts_col_pref)
+        return df, ts_col
 
     if mode == "database":
+        from db_loader import load_from_database
         db_cfg = config.get("db", {})
         conn_str = _resolve_env_value(db_cfg.get("connection_string", ""))
-        sql = _resolve_env_value(db_cfg.get("query", ""))
-        df = load_from_database(conn_str, sql, timestamp_column=ts_col)
-        return df, _resolve_timestamp_column(df, ts_col)
+        query = _resolve_env_value(db_cfg.get("query", ""))
+        df = load_from_database(conn_str, query, timestamp_column=ts_col_pref)
+        ts_col = _resolve_timestamp_column(df, ts_col_pref)
+        return df, ts_col
 
-    raise DataLoadError(f"Unknown input_mode: {mode!r}")
+    raise DataLoadError(f"Unsupported input_mode: {mode!r}. Expected 'excel_file', 'excel_folder', or 'database'.")
 
-
-# ---------- helpers ----------
 
 def _resolve_timestamp_column(df: pd.DataFrame, explicit: Optional[str]) -> str:
+    """Finds or auto-detects the timestamp column."""
     if explicit and explicit in df.columns:
         return explicit
+
+    # Common candidates
+    candidates = ["date", "timestamp", "datetime", "time", "day", "ts"]
+    for col in df.columns:
+        if col.lower() in candidates:
+            return col
+
+    # Fall back to first non-numeric column
     non_numeric = [
         c for c in df.columns
         if c != "__source_file" and not pd.api.types.is_numeric_dtype(df[c])
     ]
-    if not non_numeric:
-        raise DataLoadError(
-            "No non-numeric column found to use as timestamp."
-        )
-    return non_numeric[0]
+    if non_numeric:
+        return non_numeric[0]
+
+    raise DataLoadError("Could not identify a timestamp column in data.")
 
 
 def _resolve_env_value(value: str) -> str:
-    """
-    If `value` looks like an env-var reference ('ENV:NAME'), look it up.
-    Otherwise return as-is. Lets users keep secrets out of config.yaml.
-    """
+    """Resolves 'ENV:VAR_NAME' references from environment variables."""
     if isinstance(value, str) and value.startswith("ENV:"):
-        import os
-        name = value[4:].strip()
-        resolved = os.environ.get(name, "")
-        if not resolved:
-            logger.warning(f"Environment variable {name} referenced in config is empty.")
-        return resolved
+        var_name = value[4:].strip()
+        val = os.environ.get(var_name, "")
+        if not val:
+            logger.warning(f"Environment variable '{var_name}' referenced in config is empty.")
+        return val
     return value or ""

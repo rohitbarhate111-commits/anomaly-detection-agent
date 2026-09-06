@@ -1,39 +1,29 @@
 """
 summary_generator.py
 
-Turns raw Anomaly records into short, human-readable summaries.
-
-Caveat: we don't have a real business glossary, so the "Possible Impact" section
-is inferred from the column name using generic heuristics (e.g. "revenue" ->
-financial impact, "error" -> reliability impact). This is intentionally generic
-and should be replaced with a proper glossary mapping for production use.
-
-v2 additions:
-    - Each summary dict includes placeholder fields `co_occurrences` and
-      `correlation_note`. They are filled in by correlation.attach_correlation_notes.
-    - Each summary dict includes `is_escalation` (default False) so the email
-      body and report can flag escalations without re-deriving the rule.
+Translates quantitative anomaly events into human-readable, domain-aware summaries.
+Calculates percentage deviations relative to model baselines and categorizes severity.
 """
 
+from __future__ import annotations
+
 import logging
-from typing import List
+from typing import List, Sequence
 
 from anomaly_detector import Anomaly
 
 logger = logging.getLogger(__name__)
 
-
-# Generic impact hints keyed by lowercased metric substring.
-# NOTE: inferential only - no business glossary provided.
+# Business impact heuristics mapped to metric name keywords
 _IMPACT_HINTS = [
-    (("revenue", "sales", "income", "profit"), "financial performance"),
-    (("cost", "expense", "spend"), "operating costs"),
-    (("error", "fail", "crash", "5xx"), "system reliability"),
-    (("latency", "response_time", "p99", "p95"), "user experience / performance"),
-    (("user", "active", "signup", "session"), "user engagement"),
-    (("cpu", "memory", "disk", "io"), "infrastructure health"),
-    (("conversion", "click", "impression"), "marketing effectiveness"),
-    (("order", "cart", "checkout"), "purchase funnel"),
+    (("revenue", "sales", "income", "profit", "mrr", "arr"), "financial performance and revenue capture"),
+    (("cost", "expense", "spend", "burn"), "operating expenditure and budget run rate"),
+    (("error", "fail", "crash", "5xx", "500", "exception"), "system stability and service reliability"),
+    (("latency", "response_time", "p99", "p95", "duration", "lag"), "user experience and application performance"),
+    (("user", "active", "signup", "session", "dau", "mau"), "customer adoption and user engagement"),
+    (("cpu", "memory", "disk", "io", "load", "network"), "infrastructure capacity and resource health"),
+    (("conversion", "click", "impression", "ctr"), "marketing funnel and conversion efficiency"),
+    (("order", "cart", "checkout", "transaction"), "e-commerce order pipeline and checkout throughput"),
 ]
 
 
@@ -42,81 +32,73 @@ def _infer_impact(metric_name: str) -> str:
     for needles, label in _IMPACT_HINTS:
         if any(n in name for n in needles):
             return label
-    return "operational metric (impact unclear without business context)"
+    return "operational telemetry (verify against domain-specific glossary)"
 
 
 def _severity_label(z_score: float) -> str:
     a = abs(z_score)
-    if a >= 6:
+    if a >= 6.0:
         return "extreme outlier"
     if a >= 4.5:
-        return "well outside the typical range"
-    if a >= 3:
-        return "noticeably outside the typical range"
-    return "slightly outside the typical range"
+        return "critical outlier"
+    if a >= 3.0:
+        return "noticeable outlier"
+    return "moderate deviation"
 
 
 def generate_summary(anomaly: Anomaly, is_escalation: bool = False) -> dict:
     """
-    Build a structured summary block for one anomaly.
-
-    Returns:
-        dict with keys: metric, timestamp, direction, severity, z_score,
-        actual, rolling_mean, what_changed, significance, possible_impact,
-        co_occurrences, correlation_note, is_escalation.
+    Constructs a structured plain-language summary for an Anomaly.
     """
     direction_word = "spiked" if anomaly.direction == "up" else "dropped"
 
-    if anomaly.rolling_mean and not _is_zero(anomaly.rolling_mean):
-        pct_change = ((anomaly.actual - anomaly.rolling_mean) / anomaly.rolling_mean) * 100.0
-        pct_str = f"{pct_change:+.1f}% vs baseline"
+    expected = anomaly.rolling_mean
+    actual = anomaly.actual
+
+    if abs(expected) > 1e-6:
+        pct_change = ((actual - expected) / abs(expected)) * 100.0
+        pct_str = f"{pct_change:+.1f}% vs expected baseline"
     else:
-        pct_str = "baseline near zero (percent change not meaningful)"
+        pct_str = "baseline near zero"
+
+    ts_str = anomaly.timestamp.strftime("%Y-%m-%d") if hasattr(anomaly.timestamp, "strftime") else str(anomaly.timestamp)
 
     what_changed = (
-        f"{anomaly.metric} {direction_word} from a baseline of "
-        f"{anomaly.rolling_mean:.2f} to {anomaly.actual:.2f} ({pct_str}) "
-        f"on {anomaly.timestamp.strftime('%Y-%m-%d')}."
+        f"{anomaly.metric} {direction_word} from an expected baseline of "
+        f"{expected:.2f} to {actual:.2f} ({pct_str}) on {ts_str}."
     )
 
     mode_tag = f" [{anomaly.detection_mode_used}]" if anomaly.detection_mode_used != "zscore" else ""
     significance = (
-        f"Z-score of {anomaly.z_score:+.2f}{mode_tag} - this is "
-        f"{_severity_label(anomaly.z_score)} "
-        f"(threshold: ±3.0 std deviations)."
+        f"Z-score of {anomaly.z_score:+.2f}{mode_tag} - classified as "
+        f"{_severity_label(anomaly.z_score)} (threshold: |z| >= 3.0)."
     )
 
     impact = _infer_impact(anomaly.metric)
     possible_impact = (
-        f"Given the column name '{anomaly.metric}', this likely affects "
-        f"{impact}. Confirm against your internal business glossary before "
-        f"acting on it."
+        f"Metric '{anomaly.metric}' relates to {impact}. "
+        f"Corroborate with system logs and relevant alerts before escalation."
     )
 
     return {
         "metric": anomaly.metric,
-        "timestamp": anomaly.timestamp.strftime("%Y-%m-%d"),
+        "timestamp": ts_str,
         "direction": anomaly.direction,
         "severity": _severity_label(anomaly.z_score),
         "z_score": anomaly.z_score,
-        "actual": anomaly.actual,
-        "rolling_mean": anomaly.rolling_mean,
+        "actual": actual,
+        "rolling_mean": expected,
         "what_changed": what_changed,
         "significance": significance,
         "possible_impact": possible_impact,
-        # v2 fields (filled in by correlation.attach_correlation_notes)
         "co_occurrences": [],
         "correlation_note": "",
         "is_escalation": is_escalation,
     }
 
 
-def generate_summaries(anomalies: List[Anomaly]) -> List[dict]:
-    """Generate summaries for every anomaly in the list."""
+def generate_summaries(anomalies: Sequence[Anomaly]) -> List[dict]:
+    """Generates structured summaries for all detected anomalies."""
     summaries = [generate_summary(a) for a in anomalies]
     logger.info(f"Generated {len(summaries)} business-context summaries.")
     return summaries
-
-
-def _is_zero(x: float, tol: float = 1e-9) -> bool:
-    return abs(x) < tol

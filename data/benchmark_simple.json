@@ -1,0 +1,113 @@
+{
+  "status": "success",
+  "detection_mode": "seasonal",
+  "total_metrics": 4,
+  "total_anomalies": 9,
+  "emitted_anomalies": 0,
+  "suppressed_anomalies": 9,
+  "escalations": 0,
+  "email_sent": false,
+  "report_path": null,
+  "summaries": [],
+  "all_anomalies": [
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-06-19T00:00:00",
+      "actual": 289.9627167414537,
+      "rolling_mean": 116.7229732246854,
+      "rolling_std": 32.229473060412026,
+      "z_score": 5.375196274293463,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-07-07T00:00:00",
+      "actual": 1066.229686228597,
+      "rolling_mean": 1062.2030663933526,
+      "rolling_std": 1.3156250330529948,
+      "z_score": 3.060613574599146,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-07-09T00:00:00",
+      "actual": 1335.284638947365,
+      "rolling_mean": 1092.6803992392076,
+      "rolling_std": 45.070280247949846,
+      "z_score": 5.382798562012334,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Error_Rate",
+      "timestamp": "2026-07-19T00:00:00",
+      "actual": 1.08540938399806,
+      "rolling_mean": 1.7728043308898516,
+      "rolling_std": 0.22586605534650853,
+      "z_score": -3.0433742947218714,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Error_Rate",
+      "timestamp": "2026-07-29T00:00:00",
+      "actual": 0.0,
+      "rolling_mean": 1.2956315007759889,
+      "rolling_std": 0.31833896258221556,
+      "z_score": -4.069974627882296,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-08-13T00:00:00",
+      "actual": 111.6794198905971,
+      "rolling_mean": 115.14287248703064,
+      "rolling_std": 0.9552469384285286,
+      "z_score": -3.6257144169770807,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-08-14T00:00:00",
+      "actual": 113.5989207983628,
+      "rolling_mean": 116.93186169389764,
+      "rolling_std": 1.1036026139635755,
+      "z_score": -3.0200552747556686,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-08-15T00:00:00",
+      "actual": 112.2407412092708,
+      "rolling_mean": 116.3228084150987,
+      "rolling_std": 1.327850101075282,
+      "z_score": -3.074192789172731,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Active_Users",
+      "timestamp": "2026-08-18T00:00:00",
+      "actual": 584.0,
+      "rolling_mean": 1129.686225836174,
+      "rolling_std": 102.01025364797471,
+      "z_score": -5.3493272129218745,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    }
+  ]
+}

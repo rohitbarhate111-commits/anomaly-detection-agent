@@ -1,20 +1,25 @@
 """
 correlation.py
 
-Groups anomalies that occurred on the same date (or within a configured window)
-and attaches a co-occurrence hint to each affected summary.
+Identifies temporal co-occurrences of anomalies across distinct metrics.
+Provides root-cause hints while maintaining rigorous non-causal language.
 
-Important: this is NOT causal inference. We only observe that two metrics moved
-on the same day. The user-facing language must reflect that uncertainty.
+Language specification:
+  - Must never claim verified causality.
+  - Phrasing: "Note: this anomaly coincided with unusual movement in {others} on the
+    same date. This may indicate a related cause, or may be coincidental - not confirmed causation."
 """
+
+from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import timedelta
-from typing import Dict, List
+from datetime import date, datetime
+from typing import Dict, List, Sequence, Set
+
+import pandas as pd
 
 logger = logging.getLogger(__name__)
-
 
 CO_OCCURRENCE_NOTE = (
     "Note: this anomaly coincided with unusual movement in {others} on the "
@@ -23,67 +28,81 @@ CO_OCCURRENCE_NOTE = (
 )
 
 
+def _to_date(ts: object) -> date:
+    """Converts a timestamp object to a standard calendar date."""
+    if isinstance(ts, (datetime, date)):
+        return ts.date() if hasattr(ts, "date") else ts
+    parsed = pd.to_datetime(ts)
+    return parsed.date()
+
+
 def find_co_occurrences(
-    anomalies: List,
+    anomalies: Sequence[object],
     window_days: int = 0,
 ) -> Dict[str, List[str]]:
     """
-    Return a dict: metric_name -> ordered list of OTHER metric names that
-    also had anomalies within the same time window.
+    Finds co-occurring anomalies across metrics within a sliding time window.
 
     Args:
-        anomalies: output of anomaly_detector.detect_anomalies (or filtered subset).
-        window_days: 0 means "same calendar date"; N>0 expands the window on
-            either side of each anomaly's timestamp by N days.
+        anomalies: Collection of Anomaly objects or dicts with 'metric' and 'timestamp'.
+        window_days: 0 = exact same calendar day; N > 0 = within N days of each other.
 
-    Behaviour:
-        - Timestamps are compared on their calendar date, not exact moment.
-        - A metric never lists itself.
-        - Within each cluster, each metric sees the same set of others.
+    Returns:
+        Dict mapping metric_name -> sorted list of other metric names co-occurring with it.
     """
     if not anomalies:
         return {}
 
-    by_date: Dict[object, List] = defaultdict(list)
+    # Extract clean (metric, date) tuples
+    items: List[tuple[str, date]] = []
     for a in anomalies:
-        ts = a.timestamp
-        if hasattr(ts, "date"):
-            key = ts.date() if window_days == 0 else _window_key(ts, window_days)
-        else:
-            key = ts
-        by_date[key].append(a)
+        metric = getattr(a, "metric", None) or (a.get("metric") if isinstance(a, dict) else None)
+        ts = getattr(a, "timestamp", None) or (a.get("timestamp") if isinstance(a, dict) else None)
+        if metric is not None and ts is not None:
+            items.append((str(metric), _to_date(ts)))
 
-    out: Dict[str, List[str]] = {}
-    for cluster in by_date.values():
-        if len(cluster) < 2:
-            continue
-        names = sorted({a.metric for a in cluster})
-        for n in names:
-            others = [o for o in names if o != n]
-            if others:
-                out[n] = others
+    co_occurring_map: Dict[str, Set[str]] = defaultdict(set)
 
-    n_clusters = sum(1 for v in by_date.values() if len({a.metric for a in v}) > 1)
+    n = len(items)
+    for i in range(n):
+        metric_a, date_a = items[i]
+        for j in range(i + 1, n):
+            metric_b, date_b = items[j]
+            if metric_a == metric_b:
+                continue
+
+            day_diff = abs((date_a - date_b).days)
+            if day_diff <= window_days:
+                co_occurring_map[metric_a].add(metric_b)
+                co_occurring_map[metric_b].add(metric_a)
+
+    # Convert sets to sorted lists
+    result: Dict[str, List[str]] = {
+        m: sorted(others) for m, others in sorted(co_occurring_map.items()) if others
+    }
+
+    n_co = len(result)
     logger.info(
-        f"Correlation scan: {n_clusters} co-occurring cluster(s) found "
+        f"Correlation scan: {n_co} metric(s) associated with co-occurring events "
         f"(window_days={window_days})."
     )
-    return out
+    return result
 
 
 def attach_correlation_notes(
-    summaries: List,
+    summaries: List[dict],
     co_occurrences: Dict[str, List[str]],
-) -> List:
+) -> List[dict]:
     """
-    Mutates each summary dict in place to add:
-      - 'co_occurrences': List[str] of other metric names (always set, may be empty)
-      - 'correlation_note': the formatted note, or "" when no co-occurrence.
+    Enriches summary dictionaries in-place with co-occurrence hints and non-causal phrasing.
 
-    Returns the same list for convenience.
+    Adds:
+      - 'co_occurrences': List[str]
+      - 'correlation_note': str
     """
     for s in summaries:
-        others = co_occurrences.get(s["metric"], [])
+        metric = s.get("metric", "")
+        others = co_occurrences.get(metric, [])
         s["co_occurrences"] = others
         if others:
             joined = ", ".join(others)
@@ -91,9 +110,3 @@ def attach_correlation_notes(
         else:
             s["correlation_note"] = ""
     return summaries
-
-
-def _window_key(ts, window_days: int):
-    """Bucket a timestamp into a window key of width 2*window_days+1 days."""
-    base = ts.date() if hasattr(ts, "date") else ts
-    return base - timedelta(days=window_days)

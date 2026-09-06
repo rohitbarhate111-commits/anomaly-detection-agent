@@ -1,0 +1,129 @@
+{
+  "status": "success",
+  "detection_mode": "seasonal",
+  "total_metrics": 3,
+  "total_anomalies": 9,
+  "emitted_anomalies": 1,
+  "suppressed_anomalies": 8,
+  "escalations": 1,
+  "email_sent": false,
+  "report_path": "C:\\Users\\rohit\\anomaly-detection-agent\\reports\\report_20260906_130850.html",
+  "summaries": [
+    {
+      "metric": "Error_Rate",
+      "timestamp": "2026-07-09",
+      "direction": "down",
+      "severity": "critical outlier",
+      "z_score": -5.289173716089932,
+      "actual": 0.0,
+      "rolling_mean": 1.705817814289971,
+      "what_changed": "Error_Rate dropped from an expected baseline of 1.71 to 0.00 (-100.0% vs expected baseline) on 2026-07-09.",
+      "significance": "Z-score of -5.29 [seasonal] - classified as critical outlier (threshold: |z| >= 3.0).",
+      "possible_impact": "Metric 'Error_Rate' relates to system stability and service reliability. Corroborate with system logs and relevant alerts before escalation.",
+      "co_occurrences": [],
+      "correlation_note": "",
+      "is_escalation": true
+    }
+  ],
+  "all_anomalies": [
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-04-11T00:00:00",
+      "actual": 120.6388556281891,
+      "rolling_mean": 123.6834399129948,
+      "rolling_std": 0.9589000443466013,
+      "z_score": -3.1750799290871807,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-04-22T00:00:00",
+      "actual": 508.7905021473152,
+      "rolling_mean": 491.9673566609811,
+      "rolling_std": 4.034179083962606,
+      "z_score": 4.17015336607451,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Error_Rate",
+      "timestamp": "2026-04-23T00:00:00",
+      "actual": 1.502827623050346,
+      "rolling_mean": 1.8067118038614616,
+      "rolling_std": 0.08505205554874543,
+      "z_score": -3.5729198883024305,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-05-05T00:00:00",
+      "actual": 450.2525871602537,
+      "rolling_mean": 465.593814870995,
+      "rolling_std": 5.093157071200438,
+      "z_score": -3.0121253863324173,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Latency_ms",
+      "timestamp": "2026-05-10T00:00:00",
+      "actual": 206.4820307297992,
+      "rolling_mean": 118.5672983881988,
+      "rolling_std": 16.349595591731475,
+      "z_score": 5.3771808512537005,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-06-08T00:00:00",
+      "actual": 463.368605436306,
+      "rolling_mean": 442.41886034670125,
+      "rolling_std": 6.2482308093498435,
+      "z_score": 3.3529083237859334,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-06-09T00:00:00",
+      "actual": 697.0968741099759,
+      "rolling_mean": 471.75569486163386,
+      "rolling_std": 42.307709136213795,
+      "z_score": 5.32624393636711,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Error_Rate",
+      "timestamp": "2026-07-09T00:00:00",
+      "actual": 0.0,
+      "rolling_mean": 1.705817814289971,
+      "rolling_std": 0.3225112098513209,
+      "z_score": -5.289173716089932,
+      "direction": "down",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    },
+    {
+      "metric": "Revenue",
+      "timestamp": "2026-08-31T00:00:00",
+      "actual": 453.7231433109772,
+      "rolling_mean": 432.1226931300016,
+      "rolling_std": 6.3545466185783,
+      "z_score": 3.399211852160157,
+      "direction": "up",
+      "detection_mode_used": "seasonal",
+      "seasonal_period": 7
+    }
+  ]
+}

@@ -7,3 +7,4 @@ statsmodels==0.14.1
 matplotlib==3.8.4
 SQLAlchemy==2.0.30
 psycopg2-binary==2.9.9
+pytest>=8.0.0

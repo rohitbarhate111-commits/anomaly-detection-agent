@@ -1,8 +1,25 @@
+# Python
 __pycache__/
-*.pyc
-*.pyo
-.env
-data/*.xlsx
-!data/.gitkeep
+*.py[cod]
+*$py.class
+*.so
+.Python
 .venv/
+env/
 venv/
+ENV/
+
+# Testing & Linting
+.pytest_cache/
+.coverage
+htmlcov/
+
+# State & Reports
+anomaly_state.db
+reports/*.html
+reports/report_*.html
+*.tmp
+
+# Environment & Secrets
+.env
+*.local
