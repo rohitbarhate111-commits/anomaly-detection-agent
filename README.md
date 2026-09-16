@@ -174,7 +174,7 @@ python main.py
 python main.py --file data/seasonal.xlsx
 python main.py --folder data/folder_in
 
-# Export structured JSON results (for APIs / Portfolio OS)
+# Export structured JSON results
 python main.py --file data/seasonal.xlsx --export-json data/scan_results.json
 ```
 
@@ -204,14 +204,6 @@ Run the complete test suite across detection, seasonal STL, suppression, correla
 ```bash
 python -m pytest tests/ -v
 ```
-
----
-
-## Portfolio OS Integration
-
-This repository is integrated into **Rohit Barhate — Portfolio OS** as a native developer monitoring application:
-- **Project Card**: Featured under `Projects` with complete architectural details and direct application launch trigger.
-- **Native OS App**: Interactive dashboard with real-time KPI metrics, interactive time-series timeline (normal values, model baseline, confidence thresholds, and anomaly markers), filterable anomaly feed, detailed inspection drawer with co-occurrence notes, and dynamic parameter tuning.
 
 ---
 
